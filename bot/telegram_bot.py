@@ -1,98 +1,80 @@
+import logging
 import os
 import sys
-import logging
+import time
+
 from environs import Env
-from telegram.ext import Updater, CommandHandler, MessageHandler, Filters
-from google.cloud import dialogflow_v2 as dialogflow
+from telegram import Bot
+from telegram.ext import CommandHandler, Filters, MessageHandler, Updater
+
+from dialogflow_api import detect_intent_texts
 from telegram_logger import TelegramLogsHandler
 
 
 logger = logging.getLogger(__file__)
 
 
-class DialogFlowBot:
-    def __init__(self):
-        try:
-            env = Env()
-            env.read_env()
-
-            self.telegram_token = env.str("TELEGRAM_BOT_TOKEN")
-            self.project_id = env.str("PROJECT_ID")
-            google_credentials = env.str("GOOGLE_APPLICATION_CREDENTIALS")
-            os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = google_credentials
-
-            self.updater = Updater(self.telegram_token, use_context=True)
-            dp = self.updater.dispatcher
-
-            dp.add_handler(CommandHandler("start", self.start))
-            dp.add_handler(MessageHandler(Filters.text & ~Filters.command, self.handle_message))
-
-        except (KeyError, ValueError) as error:
-            logger.error(f"Ошибка при инициализации Telegram бота: {error}")
-            raise
-
-        except Exception as error:
-            logger.error(f"Неизвестная ошибка при инициализации Telegram бота: {error}")
-            raise
-
-    def detect_intent_texts(self, session_id, text, language_code='ru'):
-        try:
-            session_client = dialogflow.SessionsClient()
-            session = session_client.session_path(self.project_id, session_id)
-            text_input = dialogflow.TextInput(text=text, language_code=language_code)
-            query_input = dialogflow.QueryInput(text=text_input)
-            response = session_client.detect_intent(session=session, query_input=query_input)
-            return response.query_result.fulfillment_text
-
-        except Exception as error:
-            logger.error(f"Ошибка при обработке запроса Dialogflow: {error}")
-            return None
-
-    def start(self, update, context):
-        try:
-            update.message.reply_text("Здравствуйте! Напишите что-нибудь.")
-            
-        except Exception as error:
-            logger.error(f"Ошибка при обработке команды /start: {error}")
-            update.message.reply_text("Произошла ошибка. Пожалуйста, попробуйте позже.")
-
-    def handle_message(self, update, context):
-        user_text = update.message.text
-        session_id = update.message.chat_id
-        try:
-            dialogflow_response = self.detect_intent_texts(session_id, user_text)
-            update.message.reply_text(dialogflow_response if dialogflow_response else "Я вас не понял.")
-
-        except Exception as error:
-            logger.error(f"Ошибка при получении сообщения: {error}")
-
-    def run(self):
-        try:
-            logger.info("Telegram Бот запущен.")
-            self.updater.start_polling()
-            self.updater.idle()
-
-        except Exception as error:
-            logger.error(f"Ошибка при запуске Telegram бота: {error}")
+def start(update, context):
+    try:
+        update.message.reply_text("Здравствуйте! Чем могу помочь?")
+    except Exception:
+        logger.exception("Ошибка при обработке команды /start")
+        update.message.reply_text("Произошла ошибка. Пожалуйста, попробуйте позже.")
 
 
-if __name__ == "__main__":
+def handle_message(update, context):
+    user_text = update.message.text
+    session_id = update.message.chat_id
+    project_id = context.bot_data["project_id"]
+    try:
+        dialogflow_response, _ = detect_intent_texts(project_id, session_id, user_text)
+        update.message.reply_text(dialogflow_response if dialogflow_response else "Я вас не понял.")
+    except Exception:
+        logger.exception("Ошибка при получении сообщения")
+
+
+def main():
     env = Env()
     env.read_env()
+
+    project_id = env.str("PROJECT_ID")
+    google_credentials = env.str("GOOGLE_APPLICATION_CREDENTIALS")
+    os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = google_credentials
+    telegram_token = env.str("TELEGRAM_BOT_TOKEN")
     error_bot_token = env.str("ERROR_BOT_TOKEN")
     error_chat_id = env.int("ERROR_CHAT_ID")
-
-    telegram_handler = TelegramLogsHandler(error_bot_token, error_chat_id)
-    telegram_handler.setLevel(logging.INFO)
 
     logging.basicConfig(
         level=logging.DEBUG,
         format="%(asctime)s [%(levelname)s] %(message)s",
-        handlers=[
-            logging.StreamHandler(sys.stdout),
-            telegram_handler
-        ]
+        handlers=[logging.StreamHandler(sys.stdout)]
     )
-    
-    bot = DialogFlowBot()
-    bot.run()
+    logger.setLevel(logging.DEBUG)
+
+    error_bot = Bot(token=error_bot_token)
+    telegram_handler = TelegramLogsHandler(error_bot_token, error_chat_id)
+    telegram_handler.setLevel(logging.ERROR)
+    formatter = logging.Formatter('%(asctime)s [%(levelname)s] %(message)s')
+    telegram_handler.setFormatter(formatter)
+    logger.addHandler(telegram_handler)
+
+    error_bot.send_message(chat_id=error_chat_id, text="Telegram Бот запущен.")
+    logger.info("Telegram Бот запущен.")
+
+    updater = Updater(telegram_token, use_context=True)
+    dp = updater.dispatcher
+    dp.bot_data["project_id"] = project_id
+    dp.add_handler(CommandHandler("start", start))
+    dp.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_message))
+
+    while True:
+        try:
+            updater.start_polling()
+            updater.idle()
+        except Exception:
+            logger.exception("Telegram Бот упал с ошибкой")
+            time.sleep(5)
+
+
+if __name__ == "__main__":
+    main()
