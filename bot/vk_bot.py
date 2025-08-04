@@ -1,5 +1,3 @@
-import random
-
 import os
 from environs import Env
 import vk_api
