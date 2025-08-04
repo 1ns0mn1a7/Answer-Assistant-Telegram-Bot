@@ -41,11 +41,13 @@ class VkDialogFlowBot:
             text_input = dialogflow.TextInput(text=text, language_code=language_code)
             query_input = dialogflow.QueryInput(text=text_input)
             response = session_client.detect_intent(session=session, query_input=query_input)
-            return response.query_result.fulfillment_text
+            fulfillment_text = response.query_result.fulfillment_text
+            is_fallback = response.query_result.intent.is_fallback
+            return fulfillment_text, is_fallback
 
         except Exception as error:
             logger.error(f"Ошибка при обработке запроса Dialogflow: {error}")
-            return None
+            return None, True
 
     def send_message(self, user_id, message):
         try:
@@ -54,14 +56,17 @@ class VkDialogFlowBot:
                 random_id=get_random_id(),
                 message=message
             )
+
         except Exception as error:
             logger.error(f"Ошибка при отправке сообщения пользователю {user_id}: {error}")
 
     def handle_message(self, user_id, text):
         try:
-            dialogflow_response = self.detect_intent_texts(user_id, text)
-            reply_text = dialogflow_response if dialogflow_response else "Я вас не понял."
-            self.send_message(user_id, reply_text)
+            dialogflow_response, is_fallback = self.detect_intent_texts(user_id, text)
+            if is_fallback:
+                return
+            self.send_message(user_id, dialogflow_response)
+
         except Exception as error:
             logger.error(f"Ошибка при обработке сообщения от {user_id}: {error}")
 
@@ -71,6 +76,7 @@ class VkDialogFlowBot:
             for event in self.longpoll.listen():
                 if event.type == VkEventType.MESSAGE_NEW and event.to_me:
                     self.handle_message(event.user_id, event.text)
+
         except Exception as error:
             logger.error(f"Ошибка при запуске бота: {error}")
 
