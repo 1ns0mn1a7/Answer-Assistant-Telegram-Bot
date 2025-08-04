@@ -6,6 +6,7 @@ import vk_api
 from vk_api.longpoll import VkLongPoll, VkEventType
 from vk_api.utils import get_random_id
 from google.cloud import dialogflow_v2 as dialogflow
+from telegram_logger import TelegramLogsHandler
 
 
 logger = logging.getLogger(__file__)
@@ -27,11 +28,11 @@ class VkDialogFlowBot:
             self.longpoll = VkLongPoll(self.vk_session)
 
         except (KeyError, ValueError) as error:
-            logger.error(f"Ошибка при инициализации бота: {error}")
+            logger.error(f"Ошибка при инициализации VK бота: {error}")
             raise
 
         except Exception as error:
-            logger.error(f"Неизвестная ошибка при инициализации бота: {error}")
+            logger.error(f"Неизвестная ошибка при инициализации VK бота: {error}")
             raise
 
     def detect_intent_texts(self, session_id, text, language_code='ru'):
@@ -78,14 +79,25 @@ class VkDialogFlowBot:
                     self.handle_message(event.user_id, event.text)
 
         except Exception as error:
-            logger.error(f"Ошибка при запуске бота: {error}")
+            logger.error(f"Ошибка при запуске VK бота: {error}")
 
 
 if __name__ == "__main__":
+    env = Env()
+    env.read_env()
+    error_bot_token = env.str("ERROR_BOT_TOKEN")
+    error_chat_id = env.int("ERROR_CHAT_ID")
+
+    telegram_handler = TelegramLogsHandler(error_bot_token, error_chat_id)
+    telegram_handler.setLevel(logging.INFO)
+
     logging.basicConfig(
         level=logging.DEBUG,
         format="%(asctime)s [%(levelname)s] %(message)s",
-        handlers=[logging.StreamHandler(sys.stdout)]
+        handlers=[
+            logging.StreamHandler(sys.stdout),
+            telegram_handler
+        ]
     )
     bot = VkDialogFlowBot()
     bot.run()

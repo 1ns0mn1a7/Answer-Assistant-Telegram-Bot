@@ -4,6 +4,7 @@ import logging
 from environs import Env
 from telegram.ext import Updater, CommandHandler, MessageHandler, Filters
 from google.cloud import dialogflow_v2 as dialogflow
+from telegram_logger import TelegramLogsHandler
 
 
 logger = logging.getLogger(__file__)
@@ -27,11 +28,11 @@ class DialogFlowBot:
             dp.add_handler(MessageHandler(Filters.text & ~Filters.command, self.handle_message))
 
         except (KeyError, ValueError) as error:
-            logger.error(f"Ошибка при инициализации бота: {error}")
+            logger.error(f"Ошибка при инициализации Telegram бота: {error}")
             raise
 
         except Exception as error:
-            logger.error(f"Неизвестная ошибка при инициализации бота: {error}")
+            logger.error(f"Неизвестная ошибка при инициализации Telegram бота: {error}")
             raise
 
     def detect_intent_texts(self, session_id, text, language_code='ru'):
@@ -67,20 +68,31 @@ class DialogFlowBot:
 
     def run(self):
         try:
-            logger.info("Бот запущен.")
+            logger.info("Telegram Бот запущен.")
             self.updater.start_polling()
             self.updater.idle()
 
         except Exception as error:
-            logger.error(f"Ошибка при запуске бота: {error}")
+            logger.error(f"Ошибка при запуске Telegram бота: {error}")
 
 
 if __name__ == "__main__":
+    env = Env()
+    env.read_env()
+    error_bot_token = env.str("ERROR_BOT_TOKEN")
+    error_chat_id = env.int("ERROR_CHAT_ID")
+
+    telegram_handler = TelegramLogsHandler(error_bot_token, error_chat_id)
+    telegram_handler.setLevel(logging.INFO)
+
     logging.basicConfig(
         level=logging.DEBUG,
         format="%(asctime)s [%(levelname)s] %(message)s",
-        handlers=[logging.StreamHandler(sys.stdout)]
+        handlers=[
+            logging.StreamHandler(sys.stdout),
+            telegram_handler
+        ]
     )
-    logger.setLevel(logging.DEBUG)
+    
     bot = DialogFlowBot()
     bot.run()
