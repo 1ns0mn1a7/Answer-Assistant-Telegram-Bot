@@ -24,7 +24,7 @@ def start(update, context):
 
 def handle_message(update, context):
     user_text = update.message.text
-    session_id = update.message.chat_id
+    session_id = f"tg-{update.message.chat_id}"
     project_id = context.bot_data["project_id"]
     try:
         dialogflow_response, _ = detect_intent_texts(project_id, session_id, user_text)

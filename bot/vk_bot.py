@@ -29,7 +29,8 @@ def send_message(vk, user_id, message):
 
 def handle_message(vk, user_id, text, project_id):
     try:
-        dialogflow_response, is_fallback = detect_intent_texts(project_id, user_id, text)
+        session_id = f"vk-{user_id}"
+        dialogflow_response, is_fallback = detect_intent_texts(project_id, session_id, text)
         if is_fallback:
             return
         send_message(vk, user_id, dialogflow_response)
